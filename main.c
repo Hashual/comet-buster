@@ -21,6 +21,7 @@
 
 bool gameover;
 SDL_Surface *screen;
+SDL_Surface *shield_surface;
 sprite_t sprite_ship;
 list_ptr l_sprite_bullet;
 list_ptr l_sprite_comet;
@@ -29,7 +30,20 @@ list_ptr l_sprite_text;
 list_ptr l_sprite_life_counter;
 list_ptr l_score_el = NULL;
 
+bool shield_active = false;
+int shield_timer = 0;
+#define SHIELD_DURATION 180
+#define SHIELD_FRAME_COUNT 8
+#define SHIELD_SIZE 48
+#define SHIELD_MAX_HITS 3
+#define SHIELD_COOLDOWN_SECONDS 5
+#define SHIELD_COOLDOWN_FRAMES 250
+#define SHIELD_MESSAGE_LIFETIME 150
+
 bool shoot_again;
+bool shield_key_was_down = false;
+int shield_hits = 0;
+int shield_cooldown = 0;
 int score;
 int level = LEVEL_MIN;
 
@@ -38,6 +52,8 @@ int init_sdl(void);
 void general_events(char *keys);
 void game_events(char *keys);
 void draw_explosion(int i,int j);
+void draw_shield(void);
+void show_shield_cooldown_message(TTF_Font *font);
 void draw_fire(void);
 void draw_life_counter(void);
 void draw_score(TTF_Font *font);
@@ -45,6 +61,24 @@ void next_level(TTF_Font *font);
 void draw_sprites(list_ptr *l_sprite);
 void split(sprite_t old_comet, list_ptr **l_sprite_comet, enum sprite_type new_type);
 void split_and_score(list_ptr element, list_ptr *l_sprite_comet, bool update_score);
+
+static Uint32 surface_pixel(SDL_Surface *surface, int x, int y) {
+  int bytes_per_pixel = surface->format->BytesPerPixel;
+  Uint8 *pixel = (Uint8 *)surface->pixels + y * surface->pitch + x * bytes_per_pixel;
+
+  switch (bytes_per_pixel) {
+    case 1:
+      return *pixel;
+    case 2:
+      return *(Uint16 *)pixel;
+    case 3:
+      if (SDL_BYTEORDER == SDL_BIG_ENDIAN)
+        return pixel[0] << 16 | pixel[1] << 8 | pixel[2];
+      return pixel[0] | pixel[1] << 8 | pixel[2] << 16;
+    default:
+      return *(Uint32 *)pixel;
+  }
+}
 
 /* SDL Initialisation. Create windows and so on
  *  return 0 if everything is ok, otherwise 1.
@@ -66,6 +100,55 @@ int init_sdl(void) {
   /* set keyboard repeat */
   SDL_EnableKeyRepeat(50, 50);
   return 0;
+}
+
+/* Draw the current frame of the shield spritesheet. */
+void draw_shield(void) {
+  int frame_width;
+  int frame;
+  int center_x;
+  int center_y;
+  SDL_Rect source;
+  SDL_Rect destination;
+
+  if (!shield_active || shield_surface == NULL)
+    return;
+
+  frame_width = shield_surface->w / SHIELD_FRAME_COUNT;
+  frame = (SHIELD_DURATION - shield_timer) /
+          (SHIELD_DURATION / SHIELD_FRAME_COUNT);
+  if (frame >= SHIELD_FRAME_COUNT)
+    frame = SHIELD_FRAME_COUNT - 1;
+
+  center_x = sprite_ship->rc_screen_xy.x + sprite_ship->size / 2;
+  center_y = sprite_ship->rc_screen_xy.y + sprite_ship->size / 2;
+  source.x = frame * frame_width;
+  source.y = 0;
+  source.w = frame_width;
+  source.h = shield_surface->h;
+  destination.x = center_x - SHIELD_SIZE / 2;
+  destination.y = center_y - SHIELD_SIZE / 2;
+  SDL_BlitSurface(shield_surface, &source, screen, &destination);
+}
+
+void show_shield_cooldown_message(TTF_Font *font) {
+  SDL_Color color = {255, 255, 0, 0};
+  SDL_Surface *message_surface;
+  sprite_t message_sprite;
+  char message[128];
+
+  if (font == NULL)
+    return;
+
+  sprintf(message, "Bouclier inactif pendant %d secondes",
+          SHIELD_COOLDOWN_SECONDS);
+  message_surface = TTF_RenderText_Solid(font, message, color);
+  if (message_surface == NULL)
+    return;
+
+  message_sprite = sprite_new_text(message_surface, 120, SCREEN_HEIGHT - 45);
+  message_sprite->lifetime = SHIELD_MESSAGE_LIFETIME;
+  l_sprite_text = list_add(message_sprite, l_sprite_text);
 }
 
 
@@ -101,7 +184,7 @@ void general_events(char* keys) {
 /* In game event handler
  * */
 void game_events(char* key) {
-  SDLKey tabkey[] = {SDLK_UP,SDLK_DOWN,SDLK_LEFT,SDLK_RIGHT, SDLK_SPACE};
+  SDLKey tabkey[] = {SDLK_UP,SDLK_DOWN,SDLK_LEFT,SDLK_RIGHT, SDLK_SPACE, SDLK_e};
   int i;
   if (key[tabkey[0]]) { //UP
     sprite_boost(sprite_ship, SPACESHIP_BOOST);
@@ -121,7 +204,31 @@ void game_events(char* key) {
       draw_fire();
       shoot_again = false;
     }
-  } else {
+  } 
+  if (key[tabkey[5]] && !shield_key_was_down) {
+    if (shield_active) {
+      shield_active = false;
+      shield_timer = 0;
+    } else if (shield_cooldown == 0) {
+      shield_active = true;
+      shield_timer = SHIELD_DURATION;
+      shield_hits = 0;
+    }
+  }
+  shield_key_was_down = key[tabkey[5]];
+
+  if (shield_active) {
+    shield_timer--;
+
+    if (shield_timer <= 0) {
+      shield_active = false;
+    }
+  }
+
+  if (shield_cooldown > 0)
+    shield_cooldown--;
+
+  if (!key[tabkey[4]]) {
     shoot_again = true;
   }
 }
@@ -339,6 +446,40 @@ int main(int argc, char* argv[]) {
   font_score = TTF_OpenFont("fonts/LinLibertine_DR.ttf", 24);
   font_next_level = TTF_OpenFont("fonts/LinLibertine_DR.ttf", 36);;
 
+  // load and resize the eight-frame shield spritesheet
+  temp = SDL_LoadBMP("sprites/shield_sheet.bmp");
+  shield_surface = temp ? SDL_DisplayFormat(temp) : NULL;
+  if (temp)
+    SDL_FreeSurface(temp);
+  if (shield_surface) {
+    SDL_Surface *source_surface = shield_surface;
+    SDL_Surface *small_surface = SDL_CreateRGBSurface(
+        SDL_SWSURFACE,
+        SHIELD_SIZE * SHIELD_FRAME_COUNT,
+        SHIELD_SIZE,
+        screen->format->BitsPerPixel,
+        screen->format->Rmask,
+        screen->format->Gmask,
+        screen->format->Bmask,
+        screen->format->Amask);
+    int source_frame_width = source_surface->w / SHIELD_FRAME_COUNT;
+    int frame;
+
+    if (small_surface) {
+      for (frame = 0; frame < SHIELD_FRAME_COUNT; frame++) {
+        SDL_Rect source = {frame * source_frame_width, 0,
+                           source_frame_width, source_surface->h};
+        SDL_Rect destination = {frame * SHIELD_SIZE, 0,
+                                SHIELD_SIZE, SHIELD_SIZE};
+        SDL_SoftStretch(source_surface, &source, small_surface, &destination);
+      }
+      SDL_FreeSurface(source_surface);
+      shield_surface = small_surface;
+      SDL_SetColorKey(shield_surface, SDL_SRCCOLORKEY,
+                      surface_pixel(shield_surface, 0, 0));
+    }
+  }
+
   // create the text sprites list
   l_sprite_text = list_new();
 
@@ -390,6 +531,7 @@ int main(int argc, char* argv[]) {
 
     /* play & draw the spaceship sprite */
     sprite_play_physics(sprite_ship);
+    draw_shield();
     SDL_BlitSurface(sprite_ship->sprite, &sprite_ship->rc_anim_xy, screen, &sprite_ship->rc_screen_xy);
 
     // draw comets & nyancats
@@ -408,22 +550,37 @@ int main(int argc, char* argv[]) {
       if (collide) {
         // draw the explosion
         draw_explosion(cu,cv);
-        //no additional score if the ship is destroyed?
-	split_and_score(list_el, &l_sprite_comet, false);
-	list_remove(list_el, &l_sprite_comet);
-	sprite_ship->x = sprite_ship->rc_screen_xy.x = 304;
-	sprite_ship->y = sprite_ship->rc_screen_xy.y = 224;
-	sprite_ship->vx = 0.;
-	sprite_ship->vy = 0.;
-	if (!list_is_empty(l_sprite_life_counter)) {
-	  sprite_t dead_sprite = list_pop_sprite(&l_sprite_life_counter);
-          if (dead_sprite)
-            sprite_free(dead_sprite);
-	} else {
-          printf(" ============ Game Over ============= \n");
-          printf("Score: you reached level %d with %d points\n",level,score);
-          fflush(stdout);
-          gameover = true;
+
+        if (shield_active) {
+          /* The shield destroys the enemy instead of the ship. */
+          shield_hits++;
+          split_and_score(list_el, &l_sprite_comet, true);
+          list_remove(list_el, &l_sprite_comet);
+
+          if (shield_hits >= SHIELD_MAX_HITS) {
+            shield_active = false;
+            shield_timer = 0;
+            shield_cooldown = SHIELD_COOLDOWN_FRAMES;
+            show_shield_cooldown_message(font_score);
+          }
+        } else {
+          //no additional score if the ship is destroyed?
+          split_and_score(list_el, &l_sprite_comet, false);
+          list_remove(list_el, &l_sprite_comet);
+          sprite_ship->x = sprite_ship->rc_screen_xy.x = 304;
+          sprite_ship->y = sprite_ship->rc_screen_xy.y = 224;
+          sprite_ship->vx = 0.;
+          sprite_ship->vy = 0.;
+          if (!list_is_empty(l_sprite_life_counter)) {
+            sprite_t dead_sprite = list_pop_sprite(&l_sprite_life_counter);
+            if (dead_sprite)
+              sprite_free(dead_sprite);
+          } else {
+            printf(" ============ Game Over ============= \n");
+            printf("Score: you reached level %d with %d points\n",level,score);
+            fflush(stdout);
+            gameover = true;
+          }
         }
       }
     }
@@ -486,6 +643,7 @@ int main(int argc, char* argv[]) {
   sprite_free(sprite_ship);
   /* free the background surface */
   SDL_FreeSurface(bg);
+  SDL_FreeSurface(shield_surface);
   // Shutdown the TTF library
   TTF_CloseFont(font_next_level);
   TTF_CloseFont(font_score);
