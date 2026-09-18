@@ -7,8 +7,7 @@
  * */
 list_ptr list_new(void)
 {
-  list_ptr new_list = malloc(sizeof(s_list_node_t));
-  return new_list;
+  return NULL;
 }
 
 /* Add a new cel to a list. 
