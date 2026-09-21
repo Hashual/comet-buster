@@ -253,7 +253,12 @@ void draw_fire(void) {
   sprite_t sprite;
   colorkey = SDL_MapRGB(screen->format, 255, 125, 0);
   dir_angle = 2.*PI*sprite_ship->anim_sprite_num/sprite_ship->anim_sprite_num_max;
-  sprite = sprite_new(BULLET, "sprites/bullet02.bmp", colorkey, 4, 1, 0, sprite_ship->rc_screen_xy.x+sprite_ship->size/2*(1+cos(dir_angle)), sprite_ship->rc_screen_xy.y+sprite_ship->size/2*(1-sin(dir_angle)), BULLET_SPEED*cos(dir_angle), BULLET_SPEED*(-sin(dir_angle)), 0.);
+  sprite = sprite_new(BULLET, "sprites/bullet02.bmp", colorkey, 4, 1, 0,
+                      sprite_ship->rc_screen_xy.x + sprite_ship->size / 2 * (1 + cos(dir_angle)),
+                      sprite_ship->rc_screen_xy.y + sprite_ship->size / 2 * (1 - sin(dir_angle)),
+                      sprite_ship->vx + BULLET_SPEED * cos(dir_angle),
+                      sprite_ship->vy - BULLET_SPEED * sin(dir_angle),
+                      0.);
   sprite->lifetime = BULLET_LIFETIME;
   l_sprite_bullet = list_add(sprite, l_sprite_bullet);
 }

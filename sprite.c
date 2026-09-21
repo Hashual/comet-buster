@@ -86,9 +86,22 @@ void sprite_turn_right(sprite_t sprite)
 
 void sprite_play_physics(sprite_t sprite)
 {
+  float max_speed = (sprite->type == BULLET) ? 20.0 : 10.0;
   /* apply physics */
   sprite->vx += sprite->ax - sprite->friction*sprite->vx;
   sprite->vy += sprite->ay - sprite->friction*sprite->vy;
+
+  /* limit the speed */
+  if (sprite->vx > max_speed) {
+    sprite->vx = max_speed;
+  } else if (sprite->vx < -max_speed) {
+    sprite->vx = -max_speed;
+  }
+  if (sprite->vy > max_speed) {
+    sprite->vy = max_speed;
+  } else if (sprite->vy < -max_speed) {
+    sprite->vy = -max_speed;
+  }
 
   /* move the sprite according to the new velocity */
   sprite->x += sprite->vx;
