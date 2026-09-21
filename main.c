@@ -3,6 +3,7 @@
 #include <math.h>
 #include <time.h>
 #include <stdbool.h>
+#include "score.h"
 
 #include "sprite.h"
 #include "collider.h"
@@ -47,6 +48,12 @@ int shield_cooldown = 0;
 int score;
 int level = LEVEL_MIN;
 
+typedef enum {
+  MENU_START,
+  MENU_SCOREBOARD,
+  MENU_QUIT
+} menu_result_t;
+
 /* Declaration of few prototypes because there is no .h file with them */
 int init_sdl(void);
 void general_events(char *keys);
@@ -61,6 +68,7 @@ void next_level(TTF_Font *font);
 void draw_sprites(list_ptr *l_sprite);
 void split(sprite_t old_comet, list_ptr **l_sprite_comet, enum sprite_type new_type);
 void split_and_score(list_ptr element, list_ptr *l_sprite_comet, bool update_score);
+menu_result_t run_menu(TTF_Font *font_title, TTF_Font *font_button, SDL_Surface *bg);
 
 static Uint32 surface_pixel(SDL_Surface *surface, int x, int y) {
   int bytes_per_pixel = surface->format->BytesPerPixel;
@@ -204,7 +212,7 @@ void game_events(char* key) {
       draw_fire();
       shoot_again = false;
     }
-  } 
+  }
   if (key[tabkey[5]] && !shield_key_was_down) {
     if (shield_active) {
       shield_active = false;
@@ -416,7 +424,152 @@ void split(sprite_t old_comet, list_ptr **l_sprite_comet, enum sprite_type new_t
   **l_sprite_comet = list_add(second, **l_sprite_comet);
 }
 
+static bool point_in_rect(int x, int y, SDL_Rect *r) {
+  return (x >= r->x && x <= r->x + r->w && y >= r->y && y <= r->y + r->h);
+}
 
+static SDL_Surface *render_text_centered(TTF_Font *font, const char *text, SDL_Color color, int cx, int y, SDL_Rect *out_rect) {
+  SDL_Surface *surf = TTF_RenderText_Solid(font, text, color);
+  out_rect->x = cx - surf->w / 2;
+  out_rect->y = y;
+  out_rect->w = surf->w;
+  out_rect->h = surf->h;
+  return surf;
+}
+
+menu_result_t run_menu(TTF_Font *font_title, TTF_Font *font_button, SDL_Surface *bg) {
+  SDL_Color white  = {255, 255, 255, 0};
+  bool in_menu = true;
+  menu_result_t result = MENU_QUIT;
+  SDL_Rect rcBg = {0, 0, 0, 0};
+
+  SDL_Rect rc_title,  rc_score;
+  SDL_Surface *s_title = render_text_centered(font_title,  "PRESS A KEY TO START", white, SCREEN_WIDTH/2, SCREEN_HEIGHT/3, &rc_title);
+  SDL_Surface *s_score = render_text_centered(font_button, "SCORE BOARD",          white, SCREEN_WIDTH/2, SCREEN_HEIGHT/3 + 130, &rc_score);
+
+  SDL_Rect btn_score = {rc_score.x - 10, rc_score.y - 6, rc_score.w + 20, rc_score.h + 12};
+
+  while (in_menu) {
+    SDL_Event event;
+    int mx, my;
+    SDL_GetMouseState(&mx, &my);
+    bool hover_score = point_in_rect(mx, my, &btn_score);
+
+    while (SDL_PollEvent(&event)) {
+      switch (event.type) {
+        case SDL_QUIT:
+          result = MENU_QUIT;
+          in_menu = false;
+          break;
+
+        case SDL_MOUSEBUTTONDOWN:
+          if (event.button.button == SDL_BUTTON_LEFT) {
+            if (hover_score) {
+              result = MENU_SCOREBOARD;
+              in_menu = false;
+            }
+          }
+          break;
+
+        case SDL_KEYDOWN:
+          if (event.key.keysym.sym == SDLK_ESCAPE) {
+            result = MENU_QUIT;
+            in_menu = false;
+          } else {
+            result = MENU_START;
+            in_menu = false;
+          }
+          break;
+      }
+    }
+
+    SDL_BlitSurface(bg, NULL, screen, &rcBg);
+
+    SDL_BlitSurface(s_title, NULL, screen, &rc_title);
+
+    SDL_FillRect(screen, &btn_score,
+        hover_score ? SDL_MapRGB(screen->format, 90, 90, 90) : SDL_MapRGB(screen->format, 40, 40, 40));
+
+    SDL_BlitSurface(s_score, NULL, screen, &rc_score);
+
+    SDL_UpdateRect(screen, 0, 0, 0, 0);
+    while (SDL_Flip(screen) != 0) {
+      SDL_Delay(1);
+    }
+    SDL_Delay(15);
+  }
+
+  SDL_FreeSurface(s_title);
+  SDL_FreeSurface(s_score);
+
+  return result;
+}
+
+/*Function that display best score of the player*/
+menu_result_t display_scoreboard(TTF_Font *font_title, TTF_Font *font_button, SDL_Surface *bg) {
+  SDL_Color white  = {255, 255, 255, 0};
+  bool in_score_menu = true;
+  int score = read_score();
+  bool has_score = (score >= 0);
+  SDL_Rect rcBg = {0, 0, 0, 0};
+
+  SDL_Rect rc_title, rc_score, rc_back;
+  const char *title_text = has_score ? "BEST SCORE : " : "NO SCORE";
+  SDL_Surface *s_title = render_text_centered(font_title, title_text, white, SCREEN_WIDTH/2, SCREEN_HEIGHT/3, &rc_title);
+
+  SDL_Surface *s_score = NULL;
+  if (has_score) {
+    char score_text[64];
+    sprintf(score_text, "%08d", score);
+    s_score = render_text_centered(font_button, score_text, white, SCREEN_WIDTH/2, rc_title.y + rc_title.h + 10, &rc_score);
+  }
+
+  SDL_Surface *s_back = render_text_centered(font_button, "MENU",    white, SCREEN_WIDTH/2, SCREEN_HEIGHT/3 + 130, &rc_back);
+  char score_text[64];
+  sprintf(score_text, "%08d", score);
+
+  SDL_Rect btn_back = {rc_back.x - 10, rc_back.y - 6, rc_back.w + 20, rc_back.h + 12};
+
+  while (in_score_menu) {
+    SDL_Event event;
+    int mx, my;
+    SDL_GetMouseState(&mx, &my);
+    bool hover_back = point_in_rect(mx, my, &btn_back);
+
+    while (SDL_PollEvent(&event)) {
+      switch (event.type) {
+        case SDL_MOUSEBUTTONDOWN:
+          if (event.button.button == SDL_BUTTON_LEFT) {
+            if (hover_back) {
+              in_score_menu = false;
+            }
+          }
+          break;
+      }
+    }
+    SDL_BlitSurface(bg, NULL, screen, &rcBg);
+
+    SDL_BlitSurface(s_title, NULL, screen, &rc_title);
+    SDL_BlitSurface(s_score, NULL, screen, &rc_score);
+    SDL_FillRect(screen, &btn_back,
+        hover_back ? SDL_MapRGB(screen->format, 90, 90, 90) : SDL_MapRGB(screen->format, 40, 40, 40));
+
+
+    SDL_BlitSurface(s_back, NULL, screen, &rc_back);
+
+    SDL_UpdateRect(screen, 0, 0, 0, 0);
+    while (SDL_Flip(screen) != 0) {
+      SDL_Delay(1);
+    }
+    SDL_Delay(15);
+
+  }
+
+  SDL_FreeSurface(s_title);
+  SDL_FreeSurface(s_score);
+  SDL_FreeSurface(s_back);
+  return MENU_SCOREBOARD;
+}
 
 int main(int argc, char* argv[]) {
   SDL_Surface *temp, *bg;
@@ -430,6 +583,7 @@ int main(int argc, char* argv[]) {
   int ret;
   TTF_Font * font_score;
   TTF_Font * font_next_level;
+  menu_result_t menu_choice;
 
 
   ret = init_sdl();
@@ -445,6 +599,30 @@ int main(int argc, char* argv[]) {
   // fonts
   font_score = TTF_OpenFont("fonts/LinLibertine_DR.ttf", 24);
   font_next_level = TTF_OpenFont("fonts/LinLibertine_DR.ttf", 36);;
+
+  temp = SDL_LoadBMP("sprites/backgroundlvl1.bmp");
+  bg = SDL_DisplayFormat(temp);
+  SDL_FreeSurface(temp);
+  rcBg.x = 0;
+  rcBg.y = 0;
+
+  do {
+    menu_choice = run_menu(font_next_level, font_score, bg);
+
+    if (menu_choice == MENU_SCOREBOARD) {
+      menu_choice = display_scoreboard(font_next_level, font_score, bg);
+    }
+  } while (menu_choice == MENU_SCOREBOARD);
+
+  if (menu_choice == MENU_QUIT) {
+    SDL_FreeSurface(bg);
+    TTF_CloseFont(font_next_level);
+    TTF_CloseFont(font_score);
+    TTF_Quit();
+    SDL_Quit();
+    return 0;
+  }
+
 
   // load and resize the eight-frame shield spritesheet
   temp = SDL_LoadBMP("sprites/shield_sheet.bmp");
@@ -498,13 +676,6 @@ int main(int argc, char* argv[]) {
   //create the bullets list
   l_sprite_bullet = list_new();
 
-  //load background sprite
-  temp = SDL_LoadBMP("sprites/backgroundlvl1.bmp");
-  bg = SDL_DisplayFormat(temp);
-  SDL_FreeSurface(temp);
-  rcBg.x = 0;
-  rcBg.y = 0;
-
   gameover = false;
   shoot_again = true;
 
@@ -550,36 +721,54 @@ int main(int argc, char* argv[]) {
       if (collide) {
         // draw the explosion
         draw_explosion(cu,cv);
-
-        if (shield_active) {
-          /* The shield destroys the enemy instead of the ship. */
-          shield_hits++;
-          split_and_score(list_el, &l_sprite_comet, true);
-          list_remove(list_el, &l_sprite_comet);
-
-          if (shield_hits >= SHIELD_MAX_HITS) {
-            shield_active = false;
-            shield_timer = 0;
-            shield_cooldown = SHIELD_COOLDOWN_FRAMES;
-            show_shield_cooldown_message(font_score);
-          }
+        //no additional score if the ship is destroyed?
+        split_and_score(list_el, &l_sprite_comet, false);
+        list_remove(list_el, &l_sprite_comet);
+        sprite_ship->x = sprite_ship->rc_screen_xy.x = 304;
+        sprite_ship->y = sprite_ship->rc_screen_xy.y = 224;
+        sprite_ship->vx = 0.;
+        sprite_ship->vy = 0.;
+        if (!list_is_empty(l_sprite_life_counter)) {
+          sprite_t dead_sprite = list_pop_sprite(&l_sprite_life_counter);
+          if (dead_sprite)
+            sprite_free(dead_sprite);
         } else {
-          //no additional score if the ship is destroyed?
-          split_and_score(list_el, &l_sprite_comet, false);
-          list_remove(list_el, &l_sprite_comet);
-          sprite_ship->x = sprite_ship->rc_screen_xy.x = 304;
-          sprite_ship->y = sprite_ship->rc_screen_xy.y = 224;
-          sprite_ship->vx = 0.;
-          sprite_ship->vy = 0.;
-          if (!list_is_empty(l_sprite_life_counter)) {
-            sprite_t dead_sprite = list_pop_sprite(&l_sprite_life_counter);
-            if (dead_sprite)
-              sprite_free(dead_sprite);
+          write_score(score);
+          printf(" ============ Game Over ============= \n");
+          printf("Score: you reached level %d with %d points\n",level,score);
+          fflush(stdout);
+          gameover = true;
+
+          if (shield_active) {
+            /* The shield destroys the enemy instead of the ship. */
+            shield_hits++;
+            split_and_score(list_el, &l_sprite_comet, true);
+            list_remove(list_el, &l_sprite_comet);
+
+            if (shield_hits >= SHIELD_MAX_HITS) {
+              shield_active = false;
+              shield_timer = 0;
+              shield_cooldown = SHIELD_COOLDOWN_FRAMES;
+              show_shield_cooldown_message(font_score);
+            }
           } else {
-            printf(" ============ Game Over ============= \n");
-            printf("Score: you reached level %d with %d points\n",level,score);
-            fflush(stdout);
-            gameover = true;
+            //no additional score if the ship is destroyed?
+            split_and_score(list_el, &l_sprite_comet, false);
+            list_remove(list_el, &l_sprite_comet);
+            sprite_ship->x = sprite_ship->rc_screen_xy.x = 304;
+            sprite_ship->y = sprite_ship->rc_screen_xy.y = 224;
+            sprite_ship->vx = 0.;
+            sprite_ship->vy = 0.;
+            if (!list_is_empty(l_sprite_life_counter)) {
+              sprite_t dead_sprite = list_pop_sprite(&l_sprite_life_counter);
+              if (dead_sprite)
+                sprite_free(dead_sprite);
+            } else {
+              printf(" ============ Game Over ============= \n");
+              printf("Score: you reached level %d with %d points\n",level,score);
+              fflush(stdout);
+              gameover = true;
+            }
           }
         }
       }
