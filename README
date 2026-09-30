@@ -7,6 +7,18 @@ Contributeurs
 ======
 Elioth ROB & Dorian LOIZEAU
 
+======
+What's new?
+======
+
+### News
+- A beautiful, time-limited and breakable(3 collisions) pinky FIP shield. - Dorian
+- A menu to display the scoreboard. Scores are saved inside data.txt - Elioth
+
+### FIX
+- Velocity bug by limiting the speed of the ship. - Dorian
+- Bullet's speed. Now calculated as speed_ship + bullet_speed instead of just bullet_speed. - Elioth
+
 
 1. Compiling & running
 2. Sprites conventions
