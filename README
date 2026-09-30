@@ -11,6 +11,10 @@ Elioth ROB & Dorian LOIZEAU
 What's new?
 ======
 
+### Linkedlist.c
+- We completed the file together on GitHub.
+- About list_clone(), we know that the function isn't a deep clone. We agreed that this is not required for this project.
+
 ### News
 - A beautiful, time-limited and breakable(3 collisions) pinky FIP shield. - Dorian
 - A menu to display the scoreboard. Scores are saved inside data.txt - Elioth
