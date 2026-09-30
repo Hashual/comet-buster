@@ -1,7 +1,7 @@
 #include <stdio.h>
 
 void write_score(int score) {
-    FILE *f = fopen("data.txt", "w");
+    FILE *f = fopen("score.txt", "w");
     if (f == NULL) {
         perror("Erreur ouverture fichier");
     }
@@ -11,7 +11,7 @@ void write_score(int score) {
 
 int read_score() {
     int score;
-    FILE *f = fopen("data.txt", "r");
+    FILE *f = fopen("score.txt", "r");
     if (f == NULL) {
         perror("Erreur ouverture fichier");
         return -1;

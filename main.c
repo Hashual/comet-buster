@@ -738,7 +738,9 @@ int main(int argc, char* argv[]) {
           if (dead_sprite)
             sprite_free(dead_sprite);
         } else {
-          write_score(score);
+          if (score > read_score()) {
+            write_score(score);
+          }
           printf(" ============ Game Over ============= \n");
           printf("Score: you reached level %d with %d points\n",level,score);
           fflush(stdout);
